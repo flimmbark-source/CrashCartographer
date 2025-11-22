@@ -66,6 +66,7 @@ const App: React.FC = () => {
           salvageUI={salvageUI}
           failurePopup={failurePopup}
           postEventDecisionNeeded={postEventDecisionNeeded}
+          nodes={fragment.nodes}
           onSelectOption={handleSelectSalvageOption}
           onSalvage={handleSalvageConfirm}
           onScrap={handleScrapConfirm}

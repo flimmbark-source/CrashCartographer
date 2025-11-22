@@ -21,6 +21,7 @@ import {
 } from "../game/constants";
 import { distancePointToSegment, distancePoints, pickSome } from "../game/math";
 import { randomFailureFor, scrapRewardFor, scrapSuccessChanceFor } from "../game/failures";
+import { getNodeNarrative } from "../game/narrative";
 
 export function useGameState() {
   const [fragment, setFragment] = useState<MapFragment>(() => generateMapFragment());
@@ -318,6 +319,10 @@ export function useGameState() {
     if (!nodeHit) return;
 
     setVisitedNodeIds((prev) => [...prev, nodeHit.id]);
+
+    const narrative = getNodeNarrative(nodeHit);
+    pushLog({ nodeId: nodeHit.id, message: narrative.title });
+    pushLog({ nodeId: nodeHit.id, message: narrative.shortFlavor });
 
     switch (nodeHit.type) {
       case "WRECK":
