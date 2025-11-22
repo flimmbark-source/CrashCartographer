@@ -34,7 +34,7 @@ export type PathPoint = {
 
 export type ItemSlot = "CORE" | "ENGINE" | "HULL" | "SCANNER" | "UTILITY1" | "UTILITY2";
 
-export type ItemRarity = "COMMON" | "UNCOMMON" | "RARE";
+export type ItemRarity = "COMMON" | "UNCOMMON" | "RARE" | "ARTIFACT";
 
 export type ItemEffect = {
   maxHullDelta?: number;
@@ -48,7 +48,22 @@ export type Item = {
   rarity: ItemRarity;
   description: string;
   nodeAffinity: NodeType; // where this usually comes from
+  tags?: string[];
+  tier?: number;
   effect?: ItemEffect;
+};
+
+export type ShipLoadout = Record<ItemSlot, Item>;
+
+export type CargoItem = {
+  id: string;
+  name: string;
+  rarity: ItemRarity;
+  description: string;
+  tags?: string[];
+  tier?: number;
+  effect?: ItemEffect;
+  quantity?: number;
 };
 
 export type SalvageOption = {

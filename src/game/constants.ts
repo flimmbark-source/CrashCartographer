@@ -1,5 +1,5 @@
-import { Item, ItemSlot, NodeType, RunStats } from "./types";
-import { ITEMS } from "./items";
+import { Item, ItemSlot, NodeType, RunStats, ShipLoadout } from "./types";
+import { ALL_ITEMS } from "./items";
 
 export const NODE_COLORS: Record<NodeType, string> = {
   BASE: "#4ade80", // green
@@ -30,7 +30,7 @@ export const INITIAL_STATS: RunStats = {
   scrap: 0,
 };
 
-export const INITIAL_EQUIPPED: Record<ItemSlot, Item> = {
+export const INITIAL_EQUIPPED: ShipLoadout = {
   CORE: {
     id: "core_scout",
     name: "Scout Core",
@@ -38,10 +38,12 @@ export const INITIAL_EQUIPPED: Record<ItemSlot, Item> = {
     rarity: "COMMON",
     description: "Light frame tuned for fuel efficiency.",
     nodeAffinity: "BASE",
+    tags: ["core", "starter"],
+    tier: 1,
   },
-  ENGINE: ITEMS.find((i) => i.id === "engine_basic")!,
-  HULL: ITEMS.find((i) => i.id === "hull_standard")!,
-  SCANNER: ITEMS.find((i) => i.id === "scanner_basic")!,
-  UTILITY1: ITEMS.find((i) => i.id === "util_risk_recyclers") || ITEMS[0],
-  UTILITY2: ITEMS.find((i) => i.id === "util_signal_bender") || ITEMS[0],
+  ENGINE: ALL_ITEMS.find((i) => i.id === "engine_basic")!,
+  HULL: ALL_ITEMS.find((i) => i.id === "hull_standard")!,
+  SCANNER: ALL_ITEMS.find((i) => i.id === "scanner_basic")!,
+  UTILITY1: ALL_ITEMS.find((i) => i.id === "util_risk_recyclers") || ALL_ITEMS[0],
+  UTILITY2: ALL_ITEMS.find((i) => i.id === "util_signal_bender") || ALL_ITEMS[0],
 };

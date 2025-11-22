@@ -242,8 +242,13 @@ export function useGameState() {
 
     const options = sampled.map((item) => {
       const slot: ItemSlot = item.slot;
-      const baseChance =
-        item.rarity === "COMMON" ? 0.8 : item.rarity === "UNCOMMON" ? 0.6 : 0.4;
+      const baseChanceMap = {
+        COMMON: 0.8,
+        UNCOMMON: 0.6,
+        RARE: 0.4,
+        ARTIFACT: 0.35,
+      } as const;
+      const baseChance = baseChanceMap[item.rarity];
       const bonus = node.type === "ANOMALY" ? anomalyBonus : 0;
       const successChance = Math.min(0.95, baseChance + bonus);
       return { slot, item, successChance };

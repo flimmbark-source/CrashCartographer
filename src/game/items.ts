@@ -1,7 +1,6 @@
 import { Item, NodeType } from "./types";
 
-export const ITEMS: Item[] = [
-  // Engines (Wreck/Beacon/Anomaly)
+export const ENGINE_ITEMS: Item[] = [
   {
     id: "engine_basic",
     name: "Basic Engine",
@@ -9,6 +8,8 @@ export const ITEMS: Item[] = [
     rarity: "COMMON",
     description: "Standard drive with no special properties.",
     nodeAffinity: "BASE",
+    tags: ["engine", "starter"],
+    tier: 1,
   },
   {
     id: "engine_extended_tanks",
@@ -18,6 +19,19 @@ export const ITEMS: Item[] = [
     description: "+2 Max Fuel.",
     nodeAffinity: "WRECK",
     effect: { maxFuelDelta: 2 },
+    tags: ["engine", "fuel", "sustain"],
+    tier: 1,
+  },
+  {
+    id: "engine_steady_burn",
+    name: "Steady Burn",
+    slot: "ENGINE",
+    rarity: "COMMON",
+    description: "+1 Max Fuel for longer routes.",
+    nodeAffinity: "BEACON",
+    effect: { maxFuelDelta: 1 },
+    tags: ["engine", "fuel"],
+    tier: 1,
   },
   {
     id: "engine_long_spine",
@@ -26,23 +40,53 @@ export const ITEMS: Item[] = [
     rarity: "UNCOMMON",
     description: "First edge each map costs 0 Fuel.",
     nodeAffinity: "BEACON",
+    tags: ["engine", "route-shaper"],
+    tier: 2,
   },
   {
     id: "engine_drift_thrusters",
     name: "Drift Thrusters",
     slot: "ENGINE",
     rarity: "UNCOMMON",
-    description: "-1 Fuel cost on edges touching Anomalies (min 1).",
+    description: "Edges touching Anomalies cost 1 less Fuel (minimum 1).",
     nodeAffinity: "ANOMALY",
+    tags: ["engine", "route-shaper", "anomaly"],
+    tier: 2,
   },
-  // Hull
+  {
+    id: "engine_wayfinder_lattice",
+    name: "Wayfinder Lattice",
+    slot: "ENGINE",
+    rarity: "UNCOMMON",
+    description: "+1 Max Fuel and +1 Max Hull for safer detours.",
+    nodeAffinity: "BEACON",
+    effect: { maxFuelDelta: 1, maxHullDelta: 1 },
+    tags: ["engine", "route-shaper", "support"],
+    tier: 2,
+  },
+  {
+    id: "engine_dark_matter_spike",
+    name: "Dark Matter Spike",
+    slot: "ENGINE",
+    rarity: "ARTIFACT",
+    description: "+3 Max Fuel for deep-range jumps.",
+    nodeAffinity: "ANOMALY",
+    effect: { maxFuelDelta: 3 },
+    tags: ["engine", "fuel", "artifact"],
+    tier: 3,
+  },
+];
+
+export const HULL_ITEMS: Item[] = [
   {
     id: "hull_standard",
     name: "Standard Plating",
     slot: "HULL",
     rarity: "COMMON",
-    description: "No bonus.",
+    description: "Light plating with no bonus.",
     nodeAffinity: "BASE",
+    tags: ["hull", "starter"],
+    tier: 1,
   },
   {
     id: "hull_reinforced_bulkhead",
@@ -52,8 +96,56 @@ export const ITEMS: Item[] = [
     description: "+1 Max Hull.",
     nodeAffinity: "WRECK",
     effect: { maxHullDelta: 1 },
+    tags: ["hull", "armor"],
+    tier: 1,
   },
-  // Scanner
+  {
+    id: "hull_patchwork_shell",
+    name: "Patchwork Shell",
+    slot: "HULL",
+    rarity: "COMMON",
+    description: "+1 Max Hull from scavenged plating.",
+    nodeAffinity: "WRECK",
+    effect: { maxHullDelta: 1 },
+    tags: ["hull", "armor", "salvaged"],
+    tier: 1,
+  },
+  {
+    id: "hull_resonant_frame",
+    name: "Resonant Frame",
+    slot: "HULL",
+    rarity: "UNCOMMON",
+    description: "+2 Max Hull to absorb impacts.",
+    nodeAffinity: "PIRATE",
+    effect: { maxHullDelta: 2 },
+    tags: ["hull", "defense"],
+    tier: 2,
+  },
+  {
+    id: "hull_mending_bay",
+    name: "Mending Bay",
+    slot: "HULL",
+    rarity: "UNCOMMON",
+    description: "+1 Max Hull and +1 Max Fuel from integrated repair rigs.",
+    nodeAffinity: "BEACON",
+    effect: { maxHullDelta: 1, maxFuelDelta: 1 },
+    tags: ["hull", "support"],
+    tier: 2,
+  },
+  {
+    id: "hull_ancient_aegis",
+    name: "Ancient Aegis",
+    slot: "HULL",
+    rarity: "ARTIFACT",
+    description: "+3 Max Hull from a forgotten shield lattice.",
+    nodeAffinity: "ANOMALY",
+    effect: { maxHullDelta: 3 },
+    tags: ["hull", "artifact", "defense"],
+    tier: 3,
+  },
+];
+
+export const SCANNER_ITEMS: Item[] = [
   {
     id: "scanner_basic",
     name: "Basic Scanner",
@@ -61,6 +153,8 @@ export const ITEMS: Item[] = [
     rarity: "COMMON",
     description: "No bonus.",
     nodeAffinity: "BASE",
+    tags: ["scanner", "starter"],
+    tier: 1,
   },
   {
     id: "scanner_graveyard_mapper",
@@ -69,6 +163,8 @@ export const ITEMS: Item[] = [
     rarity: "UNCOMMON",
     description: "Wreck nodes reveal a highlighted part.",
     nodeAffinity: "WRECK",
+    tags: ["scanner", "wreck"],
+    tier: 2,
   },
   {
     id: "scanner_pattern_solver",
@@ -77,8 +173,45 @@ export const ITEMS: Item[] = [
     rarity: "UNCOMMON",
     description: "+5% anomaly success per Anomaly visited (this run).",
     nodeAffinity: "ANOMALY",
+    tags: ["scanner", "anomaly"],
+    tier: 2,
   },
-  // Utility
+  {
+    id: "scanner_long_range_survey",
+    name: "Long-Range Survey",
+    slot: "SCANNER",
+    rarity: "COMMON",
+    description: "+1 Max Fuel from efficiency tuning.",
+    nodeAffinity: "BEACON",
+    effect: { maxFuelDelta: 1 },
+    tags: ["scanner", "fuel"],
+    tier: 1,
+  },
+  {
+    id: "scanner_threat_analyzer",
+    name: "Threat Analyzer",
+    slot: "SCANNER",
+    rarity: "UNCOMMON",
+    description: "+1 Max Hull for hardened sensor pits.",
+    nodeAffinity: "PIRATE",
+    effect: { maxHullDelta: 1 },
+    tags: ["scanner", "pirate", "defense"],
+    tier: 2,
+  },
+  {
+    id: "scanner_starlit_archive",
+    name: "Starlit Archive",
+    slot: "SCANNER",
+    rarity: "ARTIFACT",
+    description: "+1 Max Hull and +1 Max Fuel from pre-collapse charts.",
+    nodeAffinity: "ANOMALY",
+    effect: { maxHullDelta: 1, maxFuelDelta: 1 },
+    tags: ["scanner", "artifact", "route-shaper"],
+    tier: 3,
+  },
+];
+
+export const UTILITY_ITEMS: Item[] = [
   {
     id: "util_risk_recyclers",
     name: "Risk Recyclers",
@@ -86,6 +219,8 @@ export const ITEMS: Item[] = [
     rarity: "UNCOMMON",
     description: "When you lose Hull at a Wreck, gain +1 Scrap.",
     nodeAffinity: "WRECK",
+    tags: ["utility", "wreck"],
+    tier: 2,
   },
   {
     id: "util_pirate_codebreaker",
@@ -94,6 +229,30 @@ export const ITEMS: Item[] = [
     rarity: "UNCOMMON",
     description: "First Pirate node each map can be paid off with Scrap instead of Hull.",
     nodeAffinity: "PIRATE",
+    tags: ["utility", "pirate"],
+    tier: 2,
+  },
+  {
+    id: "util_cargo_baffles",
+    name: "Cargo Baffles",
+    slot: "UTILITY1",
+    rarity: "COMMON",
+    description: "+1 Max Hull from hidden bracing.",
+    nodeAffinity: "WRECK",
+    effect: { maxHullDelta: 1 },
+    tags: ["utility", "armor"],
+    tier: 1,
+  },
+  {
+    id: "util_route_buffer",
+    name: "Route Buffer",
+    slot: "UTILITY2",
+    rarity: "COMMON",
+    description: "+1 Max Fuel from cached propellant cells.",
+    nodeAffinity: "BEACON",
+    effect: { maxFuelDelta: 1 },
+    tags: ["utility", "fuel"],
+    tier: 1,
   },
   {
     id: "util_signal_bender",
@@ -102,6 +261,8 @@ export const ITEMS: Item[] = [
     rarity: "UNCOMMON",
     description: "Once per map, treat 1 Pirate node as Neutral.",
     nodeAffinity: "PIRATE",
+    tags: ["utility", "pirate"],
+    tier: 2,
   },
   {
     id: "util_graviton_seed",
@@ -110,9 +271,36 @@ export const ITEMS: Item[] = [
     rarity: "RARE",
     description: "+5% scan quality per Anomaly visited (this run).",
     nodeAffinity: "ANOMALY",
+    tags: ["utility", "anomaly"],
+    tier: 2,
+  },
+  {
+    id: "util_phase_anchor",
+    name: "Phase Anchor",
+    slot: "UTILITY2",
+    rarity: "ARTIFACT",
+    description: "+1 Max Hull and +1 Max Fuel from phased bulkheads.",
+    nodeAffinity: "BEACON",
+    effect: { maxHullDelta: 1, maxFuelDelta: 1 },
+    tags: ["utility", "artifact", "support"],
+    tier: 3,
   },
 ];
 
+export const ARTIFACT_ITEMS: Item[] = [
+  ...ENGINE_ITEMS.filter((item) => item.rarity === "ARTIFACT"),
+  ...HULL_ITEMS.filter((item) => item.rarity === "ARTIFACT"),
+  ...SCANNER_ITEMS.filter((item) => item.rarity === "ARTIFACT"),
+  ...UTILITY_ITEMS.filter((item) => item.rarity === "ARTIFACT"),
+];
+
+export const ALL_ITEMS: Item[] = [
+  ...ENGINE_ITEMS,
+  ...HULL_ITEMS,
+  ...SCANNER_ITEMS,
+  ...UTILITY_ITEMS,
+];
+
 export function itemsForNodeType(nodeType: NodeType): Item[] {
-  return ITEMS.filter((i) => i.nodeAffinity === nodeType);
+  return ALL_ITEMS.filter((item) => item.nodeAffinity === nodeType);
 }
