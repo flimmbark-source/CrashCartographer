@@ -66,28 +66,12 @@ export const ShipSalvageView: React.FC<ShipSalvageViewProps> = ({
   return (
     <div className="w-full rounded-lg border border-sky-500/60 bg-slate-950/70 p-3 shadow-inner">
       <div className="relative w-full aspect-[3/2] overflow-hidden rounded-md bg-gradient-to-b from-slate-900/80 via-slate-950 to-slate-950">
-        <svg className="absolute inset-0 h-full w-full text-slate-800/60" viewBox="0 0 200 130" role="presentation">
-          <defs>
-            <linearGradient id="shipGlow" x1="0%" x2="0%" y1="0%" y2="100%">
-              <stop offset="0%" stopColor="#0ea5e9" stopOpacity="0.35" />
-              <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <path
-            d="M98 6 L102 6 L116 20 L116 36 L140 46 L140 84 L116 94 L116 112 L102 124 L98 124 L84 112 L84 94 L60 84 L60 46 L84 36 L84 20 Z"
-            fill="url(#shipGlow)"
-            stroke="#0ea5e9"
-            strokeWidth="1.5"
-            strokeOpacity="0.45"
-          />
-          <path
-            d="M100 16 L110 26 L110 44 L130 52 L130 78 L110 86 L110 108 L100 116 L90 108 L90 86 L70 78 L70 52 L90 44 L90 26 Z"
-            fill="none"
-            stroke="#1f2937"
-            strokeWidth="2"
-            strokeOpacity="0.8"
-          />
-        </svg>
+        <img
+          src="/assets/ship/base-scout.svg"
+          alt="Scout ship silhouette"
+          className="absolute inset-2 h-[92%] w-[96%] object-contain opacity-80 drop-shadow-[0_0_18px_rgba(56,189,248,0.35)]"
+        />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-sky-500/10 via-transparent to-slate-950/80" aria-hidden />
 
         {SLOT_ZONES.map((zone) => {
           const optionIndex = optionIndexBySlot[zone.slot];

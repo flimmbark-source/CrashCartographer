@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-labelledby="title desc">
+  <title id="title">Wreck Node</title>
+  <desc id="desc">Jagged hull fragments to suggest wreckage.</desc>
+  <g fill="none" stroke="#f97316" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 22 L10 10 L16 14 L18 6 L26 12 L22 24 Z" fill="#ffedd5" fill-opacity="0.35" />
+    <path d="M8 24 L12 16" />
+    <path d="M18 20 L22 10" />
+  </g>
+</svg>

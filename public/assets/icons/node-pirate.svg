@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-labelledby="title desc">
+  <title id="title">Pirate Node</title>
+  <desc id="desc">Simple skull and crossbones mark.</desc>
+  <g fill="none" stroke="#ef4444" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="16" cy="12.5" r="6" fill="#fee2e2" fill-opacity="0.35" />
+    <circle cx="13.5" cy="11.5" r="1.4" />
+    <circle cx="18.5" cy="11.5" r="1.4" />
+    <path d="M12 16 Q16 19 20 16" />
+    <path d="M8 22 L24 28" />
+    <path d="M24 22 L8 28" />
+  </g>
+</svg>

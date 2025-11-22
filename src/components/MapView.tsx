@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { NODE_COLORS, NODE_LABELS } from "../game/constants";
 import { MapFragment, PathPoint, Phase } from "../game/types";
 
@@ -28,11 +28,25 @@ export const MapView: React.FC<MapViewProps> = ({
   const width = 360;
   const height = 360;
 
+  const [erroredIcons, setErroredIcons] = useState<Record<number, boolean>>({});
+
   const travelledPoints = pathPoints.slice(0, currentPathIndex + 1);
   const remainingPoints = pathPoints.slice(currentPathIndex);
 
   const travelledPolyline = travelledPoints.map((p) => `${p.x},${p.y}`).join(" ");
   const remainingPolyline = remainingPoints.map((p) => `${p.x},${p.y}`).join(" ");
+
+  const iconPaths = useMemo(
+    () => ({
+      BASE: "/assets/icons/node-base.svg",
+      EXIT: "/assets/icons/node-exit.svg",
+      WRECK: "/assets/icons/node-wreck.svg",
+      ANOMALY: "/assets/icons/node-anomaly.svg",
+      PIRATE: "/assets/icons/node-pirate.svg",
+      BEACON: "/assets/icons/node-beacon.svg",
+    }),
+    []
+  );
 
   return (
     <div className="flex flex-col items-center gap-3 w-full max-w-md bg-slate-900/70 rounded-xl p-3 border border-slate-700">
@@ -95,20 +109,46 @@ export const MapView: React.FC<MapViewProps> = ({
           {fragment.nodes.map((node) => {
             const isBase = node.type === "BASE";
             const isExit = node.type === "EXIT";
+            const iconHref = iconPaths[node.type];
+            const showIcon = iconHref && !erroredIcons[node.id];
+            const nodeRadius = 4.6;
 
             return (
               <g key={node.id}>
                 <circle
                   cx={node.x}
                   cy={node.y}
-                  r={4.2}
+                  r={nodeRadius}
                   fill={NODE_COLORS[node.type]}
+                  fillOpacity={showIcon ? 0.3 : 1}
                   stroke={isBase ? "#e5e7eb" : isExit ? "#bae6fd" : "#020617"}
                   strokeWidth={isBase || isExit ? 1.8 : 1.2}
                 />
+
+                {showIcon ? (
+                  <image
+                    href={iconHref}
+                    width={9}
+                    height={9}
+                    x={node.x - 4.5}
+                    y={node.y - 4.5}
+                    preserveAspectRatio="xMidYMid meet"
+                    onError={() => setErroredIcons((prev) => ({ ...prev, [node.id]: true }))}
+                  />
+                ) : (
+                  <circle
+                    cx={node.x}
+                    cy={node.y}
+                    r={3.3}
+                    fill={NODE_COLORS[node.type]}
+                    stroke="#0f172a"
+                    strokeWidth={0.9}
+                  />
+                )}
+
                 <text
                   x={node.x}
-                  y={node.y - 5.2}
+                  y={node.y - 5.6}
                   textAnchor="middle"
                   fontSize={3}
                   fill="#e5e7eb"
