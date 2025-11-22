@@ -213,6 +213,26 @@ export const SCANNER_ITEMS: Item[] = [
 
 export const UTILITY_ITEMS: Item[] = [
   {
+    id: "util_basic_mount",
+    name: "Basic Utility Mount",
+    slot: "UTILITY1",
+    rarity: "COMMON",
+    description: "Empty hardpoint with no bonus.",
+    nodeAffinity: "BASE",
+    tags: ["utility", "starter"],
+    tier: 1,
+  },
+  {
+    id: "util_basic_circuit",
+    name: "Basic Utility Circuit",
+    slot: "UTILITY2",
+    rarity: "COMMON",
+    description: "Standard wiring with no bonus.",
+    nodeAffinity: "BASE",
+    tags: ["utility", "starter"],
+    tier: 1,
+  },
+  {
     id: "util_risk_recyclers",
     name: "Risk Recyclers",
     slot: "UTILITY1",
