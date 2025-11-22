@@ -49,7 +49,7 @@ export const MapView: React.FC<MapViewProps> = ({
   );
 
   return (
-    <div className="flex flex-col items-center gap-3 w-full max-w-md bg-slate-900/70 rounded-xl p-3 border border-slate-700">
+    <div className="flex flex-col items-center gap-3 w-full max-w-md bg-slate-900/70 rounded-2xl p-3 border border-slate-700 shadow-xl shadow-sky-900/40">
       <div className="flex justify-between items-center w-full mb-1 gap-2">
         <div className="text-[11px] text-slate-400">
           <span className="font-semibold text-slate-200 mr-1">1.</span>
