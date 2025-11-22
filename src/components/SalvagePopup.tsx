@@ -1,5 +1,6 @@
 import React from "react";
 import { FailurePopup as FailurePopupType, Phase, SalvageUIState } from "../game/types";
+import { ShipSalvageView } from "./ShipSalvageView";
 
 type SalvagePopupProps = {
   phase: Phase;
@@ -42,7 +43,13 @@ export const SalvagePopup: React.FC<SalvagePopupProps> = ({
         leave it.
       </p>
 
-      <div className="grid grid-cols-3 gap-2 mb-2">
+      <ShipSalvageView
+        options={salvageUI.options}
+        selectedIndex={salvageUI.selectedIndex}
+        onSelect={onSelectOption}
+      />
+
+      <div className="grid grid-cols-2 gap-2 text-[11px] mb-1">
         {salvageUI.options.map((opt, idx) => {
           const isSelected = salvageUI.selectedIndex === idx;
           const failureRisk = 1 - opt.successChance;
@@ -56,26 +63,28 @@ export const SalvagePopup: React.FC<SalvagePopupProps> = ({
             <button
               key={opt.item.id}
               onClick={() => onSelectOption(idx)}
-              className={`rounded-lg px-2 py-2 text-left border text-[11px] transition-all ${
+              className={`rounded-lg px-2 py-2 text-left border transition-all ${
                 isSelected
-                  ? "border-sky-400 bg-slate-800 scale-[1.02]"
+                  ? "border-sky-400 bg-slate-800 scale-[1.01]"
                   : "border-slate-700 bg-slate-900/70 hover:bg-slate-800/80"
               }`}
             >
-              <div className="text-[9px] text-slate-400 mb-1">{opt.slot}</div>
+              <div className="flex justify-between items-center mb-1">
+                <div className="text-[9px] text-slate-400">{opt.slot}</div>
+                <div className={`text-[9px] ${riskClass}`}>
+                  Salvage {Math.round(opt.successChance * 100)}%
+                </div>
+              </div>
               <div className="font-semibold text-slate-50 truncate mb-1">{opt.item.name}</div>
-              <div className={"text-[10px] text-slate-300 " + (isSelected ? "" : "line-clamp-2")}>
-                {opt.item.description}
-              </div>
-              <div className={`text-[9px] mt-1 ${riskClass}`}>
-                Salvage: {Math.round(opt.successChance * 100)}%
-              </div>
+              <div className={"text-slate-300 " + (isSelected ? "" : "line-clamp-2")}>{
+                opt.item.description
+              }</div>
             </button>
           );
         })}
 
         {salvageUI.options.length === 0 && (
-          <div className="text-slate-400 text-[11px] col-span-3">
+          <div className="text-slate-400 text-[11px] col-span-2">
             No distinct parts here, but you can still strip the site for raw scrap.
           </div>
         )}
