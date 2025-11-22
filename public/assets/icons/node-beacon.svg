@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-labelledby="title desc">
+  <title id="title">Beacon Node</title>
+  <desc id="desc">Beacon tower with radiating signal.</desc>
+  <g fill="none" stroke="#eab308" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 7 L20 25 L12 25 Z" fill="#fef3c7" fill-opacity="0.35" />
+    <path d="M10 12 Q16 8 22 12" />
+    <path d="M12 16 Q16 13 20 16" />
+    <circle cx="16" cy="7" r="2" fill="#f59e0b" />
+  </g>
+</svg>

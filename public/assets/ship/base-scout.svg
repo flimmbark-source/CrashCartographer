@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 160" role="img" aria-labelledby="title desc">
+  <title id="title">Scout Ship Silhouette</title>
+  <desc id="desc">A simple angular scout ship silhouette.</desc>
+  <defs>
+    <linearGradient id="hull" x1="0%" x2="0%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#d8eafe" stop-opacity="0.75" />
+      <stop offset="100%" stop-color="#7fb7ff" stop-opacity="0.45" />
+    </linearGradient>
+  </defs>
+  <g fill="url(#hull)" stroke="#0f172a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M60 6 L78 30 L78 68 L104 84 L104 114 L78 126 L78 148 L60 154 L42 148 L42 126 L16 114 L16 84 L42 68 L42 30 Z" />
+    <path d="M60 30 L70 44 L70 70 L88 80 L88 104 L70 114 L70 136 L60 142 L50 136 L50 114 L32 104 L32 80 L50 70 L50 44 Z" fill="#0f172a" opacity="0.16" />
+    <circle cx="60" cy="92" r="9" fill="#1e293b" />
+  </g>
+</svg>

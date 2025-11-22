@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-labelledby="title desc">
+  <title id="title">Exit Node</title>
+  <desc id="desc">Gateway arrow pointing outward.</desc>
+  <g fill="none" stroke="#38bdf8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="8" y="7" width="8" height="18" rx="2" fill="#e0f2fe" fill-opacity="0.35" />
+    <path d="M16 16 H25" />
+    <path d="M21 12 L25 16 L21 20" />
+  </g>
+</svg>
