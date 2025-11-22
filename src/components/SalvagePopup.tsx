@@ -1,5 +1,6 @@
 import React from "react";
-import { FailurePopup as FailurePopupType, Phase, SalvageUIState } from "../game/types";
+import { getNodeNarrative } from "../game/narrative";
+import { FailurePopup as FailurePopupType, MapNode, Phase, SalvageUIState } from "../game/types";
 import { ShipSalvageView } from "./ShipSalvageView";
 
 type SalvagePopupProps = {
@@ -7,6 +8,7 @@ type SalvagePopupProps = {
   salvageUI: SalvageUIState | null;
   failurePopup: FailurePopupType | null;
   postEventDecisionNeeded: boolean;
+  nodes: MapNode[];
   onSelectOption: (index: number) => void;
   onSalvage: () => void;
   onScrap: () => void;
@@ -18,6 +20,7 @@ export const SalvagePopup: React.FC<SalvagePopupProps> = ({
   salvageUI,
   failurePopup,
   postEventDecisionNeeded,
+  nodes,
   onSelectOption,
   onSalvage,
   onScrap,
@@ -26,6 +29,9 @@ export const SalvagePopup: React.FC<SalvagePopupProps> = ({
   if (!(phase === "choice" && salvageUI && !failurePopup && !postEventDecisionNeeded)) {
     return null;
   }
+
+  const node = nodes.find((n) => n.id === salvageUI.nodeId);
+  const narrative = node ? getNodeNarrative(node) : null;
 
   return (
     <div className="w-full max-w-md bg-slate-900/90 rounded-xl p-3 border border-sky-500/70 text-xs flex flex-col gap-2">
@@ -42,6 +48,13 @@ export const SalvagePopup: React.FC<SalvagePopupProps> = ({
         Tap a ship section to inspect its part, then choose to salvage, strip for raw scrap, or
         leave it.
       </p>
+
+      {narrative && (
+        <div className="rounded-md border border-slate-800 bg-slate-950/70 p-2 text-[11px]">
+          <div className="font-semibold text-slate-100">{narrative.title}</div>
+          <div className="text-slate-300">{narrative.shortFlavor}</div>
+        </div>
+      )}
 
       <ShipSalvageView
         options={salvageUI.options}

@@ -1,5 +1,27 @@
 export type NodeType = "BASE" | "EXIT" | "WRECK" | "ANOMALY" | "PIRATE" | "BEACON";
 
+export type Faction = {
+  id: string;
+  name: string;
+  shortDescription: string;
+  color?: string;
+  iconHint?: string;
+};
+
+export type Region = {
+  id: string;
+  name: string;
+  description: string;
+};
+
+export type NodeNarrative = {
+  nodeType: NodeType;
+  title: string;
+  shortFlavor: string;
+  factionId?: string;
+  regionId?: string;
+};
+
 export type MapNode = {
   id: number;
   x: number; // 0–100 (percent of width in SVG viewBox)
