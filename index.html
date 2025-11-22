@@ -1,0 +1,1569 @@
+import React, { useEffect, useMemo, useState } from "react";
+
+// ---- Types ----
+
+type NodeType = "BASE" | "EXIT" | "WRECK" | "ANOMALY" | "PIRATE" | "BEACON";
+
+type MapNode = {
+  id: number;
+  x: number; // 0–100 (percent of width in SVG viewBox)
+  y: number; // 0–100
+  type: NodeType;
+  danger: number; // 0–3
+};
+
+type MapFragment = {
+  nodes: MapNode[];
+};
+
+type RunStats = {
+  hull: number;
+  maxHull: number;
+  fuel: number;
+  maxFuel: number;
+  scrap: number; // salvage carried on this run
+};
+
+type Phase = "planning" | "resolving" | "choice" | "complete";
+
+type ResolutionLog = {
+  nodeId: number | null;
+  message: string;
+};
+
+type PathPoint = {
+  x: number;
+  y: number;
+};
+
+type ItemSlot = "CORE" | "ENGINE" | "HULL" | "SCANNER" | "UTILITY1" | "UTILITY2";
+
+type ItemRarity = "COMMON" | "UNCOMMON" | "RARE";
+
+type ItemEffect = {
+  maxHullDelta?: number;
+  maxFuelDelta?: number;
+};
+
+type Item = {
+  id: string;
+  name: string;
+  slot: ItemSlot;
+  rarity: ItemRarity;
+  description: string;
+  nodeAffinity: NodeType; // where this usually comes from
+  effect?: ItemEffect;
+};
+
+type SalvageOption = {
+  slot: ItemSlot;
+  item: Item;
+  successChance: number; // 0–1
+};
+
+type SalvageUIState = {
+  nodeId: number;
+  nodeType: NodeType;
+  options: SalvageOption[];
+  selectedIndex: number | null;
+  scrapSuccessChance: number; // 0–1
+};
+
+type FailurePopup = {
+  id: string;
+  title: string;
+  description: string;
+  consequence: string; // for UI
+  nodeType: NodeType;
+  apply: (prev: RunStats) => RunStats;
+};
+
+// ---- Constants ----
+
+const NODE_COLORS: Record<NodeType, string> = {
+  BASE: "#4ade80", // green
+  EXIT: "#38bdf8", // blue
+  WRECK: "#f97316", // orange
+  ANOMALY: "#a855f7", // purple
+  PIRATE: "#ef4444", // red
+  BEACON: "#eab308", // yellow
+};
+
+const NODE_LABELS: Record<NodeType, string> = {
+  BASE: "Base",
+  EXIT: "Exit",
+  WRECK: "Wreck",
+  ANOMALY: "Anomaly",
+  PIRATE: "Pirate",
+  BEACON: "Beacon",
+};
+
+const HIT_RADIUS = 6; // distance in viewBox units to "hit" a node (tuned for easier hits)
+const FUEL_PER_UNIT = 0.08; // fuel cost per unit of path length
+
+// ---- Helpers ----
+
+function distancePoints(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+// Distance from point p to segment a-b
+function distancePointToSegment(
+  p: { x: number; y: number },
+  a: { x: number; y: number },
+  b: { x: number; y: number }
+): number {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const abLenSq = abx * abx + aby * aby;
+
+  if (abLenSq === 0) {
+    return distancePoints(p, a);
+  }
+
+  // Project point p onto segment ab, clamp t to [0,1]
+  const apx = p.x - a.x;
+  const apy = p.y - a.y;
+  let t = (apx * abx + apy * aby) / abLenSq;
+  if (t < 0) t = 0;
+  else if (t > 1) t = 1;
+
+  const closest = { x: a.x + abx * t, y: a.y + aby * t };
+  return distancePoints(p, closest);
+}
+
+function randomInt(maxExclusive: number): number {
+  return Math.floor(Math.random() * maxExclusive);
+}
+
+function pickSome<T>(pool: T[], count: number): T[] {
+  const copy = [...pool];
+  const result: T[] = [];
+  const n = Math.min(count, copy.length);
+  for (let i = 0; i < n; i++) {
+    const idx = randomInt(copy.length);
+    result.push(copy[idx]);
+    copy.splice(idx, 1);
+  }
+  return result;
+}
+
+// Simple internal sanity checks
+function runInternalTests() {
+  const d = distancePoints({ x: 0, y: 0 }, { x: 3, y: 4 });
+  if (Math.abs(d - 5) > 0.001) {
+    // eslint-disable-next-line no-console
+    console.error("distancePoints test failed");
+  }
+}
+
+runInternalTests();
+
+// ---- Items ----
+
+const ITEMS: Item[] = [
+  // Engines (Wreck/Beacon/Anomaly)
+  {
+    id: "engine_basic",
+    name: "Basic Engine",
+    slot: "ENGINE",
+    rarity: "COMMON",
+    description: "Standard drive with no special properties.",
+    nodeAffinity: "BASE",
+  },
+  {
+    id: "engine_extended_tanks",
+    name: "Extended Tanks",
+    slot: "ENGINE",
+    rarity: "COMMON",
+    description: "+2 Max Fuel.",
+    nodeAffinity: "WRECK",
+    effect: { maxFuelDelta: 2 },
+  },
+  {
+    id: "engine_long_spine",
+    name: "Long Spine",
+    slot: "ENGINE",
+    rarity: "UNCOMMON",
+    description: "First edge each map costs 0 Fuel.",
+    nodeAffinity: "BEACON",
+  },
+  {
+    id: "engine_drift_thrusters",
+    name: "Drift Thrusters",
+    slot: "ENGINE",
+    rarity: "UNCOMMON",
+    description: "-1 Fuel cost on edges touching Anomalies (min 1).",
+    nodeAffinity: "ANOMALY",
+  },
+  // Hull
+  {
+    id: "hull_standard",
+    name: "Standard Plating",
+    slot: "HULL",
+    rarity: "COMMON",
+    description: "No bonus.",
+    nodeAffinity: "BASE",
+  },
+  {
+    id: "hull_reinforced_bulkhead",
+    name: "Reinforced Bulkhead",
+    slot: "HULL",
+    rarity: "COMMON",
+    description: "+1 Max Hull.",
+    nodeAffinity: "WRECK",
+    effect: { maxHullDelta: 1 },
+  },
+  // Scanner
+  {
+    id: "scanner_basic",
+    name: "Basic Scanner",
+    slot: "SCANNER",
+    rarity: "COMMON",
+    description: "No bonus.",
+    nodeAffinity: "BASE",
+  },
+  {
+    id: "scanner_graveyard_mapper",
+    name: "Graveyard Mapper",
+    slot: "SCANNER",
+    rarity: "UNCOMMON",
+    description: "Wreck nodes reveal a highlighted part.",
+    nodeAffinity: "WRECK",
+  },
+  {
+    id: "scanner_pattern_solver",
+    name: "Pattern Solver",
+    slot: "SCANNER",
+    rarity: "UNCOMMON",
+    description: "+5% anomaly success per Anomaly visited (this run).",
+    nodeAffinity: "ANOMALY",
+  },
+  // Utility
+  {
+    id: "util_risk_recyclers",
+    name: "Risk Recyclers",
+    slot: "UTILITY1",
+    rarity: "UNCOMMON",
+    description: "When you lose Hull at a Wreck, gain +1 Scrap.",
+    nodeAffinity: "WRECK",
+  },
+  {
+    id: "util_pirate_codebreaker",
+    name: "Pirate Codebreaker",
+    slot: "UTILITY1",
+    rarity: "UNCOMMON",
+    description: "First Pirate node each map can be paid off with Scrap instead of Hull.",
+    nodeAffinity: "PIRATE",
+  },
+  {
+    id: "util_signal_bender",
+    name: "Signal Bender",
+    slot: "UTILITY2",
+    rarity: "UNCOMMON",
+    description: "Once per map, treat 1 Pirate node as Neutral.",
+    nodeAffinity: "PIRATE",
+  },
+  {
+    id: "util_graviton_seed",
+    name: "Graviton Seed",
+    slot: "UTILITY2",
+    rarity: "RARE",
+    description: "+5% scan quality per Anomaly visited (this run).",
+    nodeAffinity: "ANOMALY",
+  },
+];
+
+function itemsForNodeType(nodeType: NodeType): Item[] {
+  return ITEMS.filter((i) => i.nodeAffinity === nodeType);
+}
+
+// ---- Map generation ----
+
+function generateMapFragment(): MapFragment {
+  const nodeCount = 8;
+  const nodes: MapNode[] = [];
+
+  // Layout nodes in a noisy ring
+  for (let i = 0; i < nodeCount; i++) {
+    const angle = (i / nodeCount) * Math.PI * 2;
+    const radius = 28 + Math.random() * 10; // percent
+    const centerX = 50;
+    const centerY = 50;
+    const x = centerX + Math.cos(angle) * radius + (Math.random() * 6 - 3);
+    const y = centerY + Math.sin(angle) * radius + (Math.random() * 6 - 3);
+
+    let type: NodeType = "WRECK";
+    if (i === 0) type = "BASE";
+    else {
+      const r = Math.random();
+      if (r < 0.25) type = "WRECK";
+      else if (r < 0.45) type = "ANOMALY";
+      else if (r < 0.65) type = "PIRATE";
+      else if (r < 0.85) type = "BEACON";
+      else type = "EXIT"; // occasional exit gate that also cashes out loot
+    }
+
+    const danger =
+      type === "BASE" || type === "EXIT" ? 0 : 1 + Math.floor(Math.random() * 3);
+
+    nodes.push({ id: i, x, y, type, danger });
+  }
+
+  return { nodes };
+}
+
+// ---- Initial Stats ----
+
+const INITIAL_STATS: RunStats = {
+  hull: 3,
+  maxHull: 3,
+  fuel: 8,
+  maxFuel: 8,
+  scrap: 0,
+};
+
+const INITIAL_EQUIPPED: Record<ItemSlot, Item> = {
+  CORE: {
+    id: "core_scout",
+    name: "Scout Core",
+    slot: "CORE",
+    rarity: "COMMON",
+    description: "Light frame tuned for fuel efficiency.",
+    nodeAffinity: "BASE",
+  },
+  ENGINE: ITEMS.find((i) => i.id === "engine_basic")!,
+  HULL: ITEMS.find((i) => i.id === "hull_standard")!,
+  SCANNER: ITEMS.find((i) => i.id === "scanner_basic")!,
+  UTILITY1: ITEMS.find((i) => i.id === "util_risk_recyclers") || ITEMS[0],
+  UTILITY2: ITEMS.find((i) => i.id === "util_signal_bender") || ITEMS[0],
+};
+
+// ---- Failure events ----
+
+function randomFailureFor(nodeType: NodeType): FailurePopup {
+  if (nodeType === "WRECK") {
+    const failures: Omit<FailurePopup, "apply">[] = [
+      {
+        id: "wreck_shard_burst",
+        title: "Shard Burst",
+        description: "The hull ruptures under a cloud of spinning debris.",
+        consequence: "-1 Hull.",
+        nodeType,
+      },
+      {
+        id: "wreck_cascade",
+        title: "Cascade Collapse",
+        description: "The wreck's spine gives way, slamming into your side.",
+        consequence: "-1 Hull and -1 Fuel.",
+        nodeType,
+      },
+    ];
+    const base = failures[randomInt(failures.length)];
+    return {
+      ...base,
+      apply: (prev) => {
+        let next = { ...prev };
+        if (base.id === "wreck_shard_burst") {
+          next.hull -= 1;
+        } else {
+          next.hull -= 1;
+          next.fuel = Math.max(0, next.fuel - 1);
+        }
+        return next;
+      },
+    };
+  }
+
+  if (nodeType === "PIRATE") {
+    const failures: Omit<FailurePopup, "apply">[] = [
+      {
+        id: "pirate_ambush",
+        title: "Pirate Ambush",
+        description: "A hidden wing of raiders knifes in from the dark.",
+        consequence: "-2 Hull.",
+        nodeType,
+      },
+      {
+        id: "pirate_boarding",
+        title: "Boarding Attempt",
+        description: "You repel boarders, but not before they fire a few shots.",
+        consequence: "-1 Hull and lose 1 Scrap.",
+        nodeType,
+      },
+    ];
+    const base = failures[randomInt(failures.length)];
+    return {
+      ...base,
+      apply: (prev) => {
+        let next = { ...prev };
+        if (base.id === "pirate_ambush") {
+          next.hull -= 2;
+        } else {
+          next.hull -= 1;
+          next.scrap = Math.max(0, next.scrap - 1);
+        }
+        return next;
+      },
+    };
+  }
+
+  if (nodeType === "ANOMALY") {
+    const failures: Omit<FailurePopup, "apply">[] = [
+      {
+        id: "anomaly_shear",
+        title: "Gravitic Shear",
+        description: "Sections of the ship tug in different directions at once.",
+        consequence: "-1 Hull and -1 Fuel.",
+        nodeType,
+      },
+      {
+        id: "anomaly_phase_skip",
+        title: "Phase Skip",
+        description: "You flicker sideways in time, systems coughing on restart.",
+        consequence: "-2 Fuel.",
+        nodeType,
+      },
+    ];
+    const base = failures[randomInt(failures.length)];
+    return {
+      ...base,
+      apply: (prev) => {
+        let next = { ...prev };
+        if (base.id === "anomaly_shear") {
+          next.hull -= 1;
+          next.fuel = Math.max(0, next.fuel - 1);
+        } else {
+          next.fuel = Math.max(0, next.fuel - 2);
+        }
+        return next;
+      },
+    };
+  }
+
+  // Beacon failures are mild
+  if (nodeType === "BEACON") {
+    const failures: Omit<FailurePopup, "apply">[] = [
+      {
+        id: "beacon_overcharge",
+        title: "Refuel Overcharge",
+        description: "Cheap fuel gums up your intake lines.",
+        consequence: "-1 Fuel.",
+        nodeType,
+      },
+      {
+        id: "beacon_shoddy_work",
+        title: "Shoddy Repairs",
+        description: "Dockside welders leave microfractures in your hull.",
+        consequence: "-1 Hull.",
+        nodeType,
+      },
+    ];
+    const base = failures[randomInt(failures.length)];
+    return {
+      ...base,
+      apply: (prev) => {
+        let next = { ...prev };
+        if (base.id === "beacon_overcharge") {
+          next.fuel = Math.max(0, next.fuel - 1);
+        } else {
+          next.hull -= 1;
+        }
+        return next;
+      },
+    };
+  }
+
+  // Fallback (should not normally hit)
+  return {
+    id: "generic_mishap",
+    title: "Mishap",
+    description: "Something rattles loose in the chaos.",
+    consequence: "-1 Hull.",
+    nodeType,
+    apply: (prev) => ({ ...prev, hull: prev.hull - 1 }),
+  };
+}
+
+function scrapSuccessChanceFor(nodeType: NodeType): number {
+  switch (nodeType) {
+    case "WRECK":
+      return 0.85;
+    case "PIRATE":
+      return 0.75;
+    case "ANOMALY":
+      return 0.8;
+    case "BEACON":
+      return 0.95;
+    default:
+      return 0.8;
+  }
+}
+
+function scrapRewardFor(nodeType: NodeType): number {
+  switch (nodeType) {
+    case "WRECK":
+      return 2;
+    case "PIRATE":
+      return 2;
+    case "ANOMALY":
+      return 3;
+    case "BEACON":
+      return 1;
+    default:
+      return 1;
+  }
+}
+
+// ---- React UI ----
+
+type LabelRowProps = { label: string; children: React.ReactNode };
+
+const LabelRow: React.FC<LabelRowProps> = ({ label, children }) => (
+  <div>
+    <div className="text-[10px] uppercase text-slate-400">{label}</div>
+    {children}
+  </div>
+);
+
+type StatsBarProps = {
+  stats: RunStats;
+  onErasePath: () => void;
+  onNewMap: () => void;
+};
+
+const StatsBar: React.FC<StatsBarProps> = ({ stats, onErasePath, onNewMap }) => {
+  return (
+    <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center justify-between w-full max-w-md bg-slate-900/70 rounded-xl p-3 border border-slate-700">
+      <div className="flex gap-4 text-sm">
+        <LabelRow label="Hull">
+          <div className="flex items-center gap-1">
+            <span>
+              {"❤ ".repeat(Math.max(0, stats.hull))}
+              <span className="text-slate-600">
+                {"❤ ".repeat(Math.max(0, stats.maxHull - stats.hull))}
+              </span>
+            </span>
+            <span className="text-[11px] text-slate-300">
+              ({Math.max(0, stats.hull)}/{stats.maxHull})
+            </span>
+          </div>
+        </LabelRow>
+        <LabelRow label="Fuel">
+          <div className="flex items-center gap-2">
+            <div className="w-24 h-2 bg-slate-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-sky-400"
+                style={{ width: `${Math.max(0, (stats.fuel / stats.maxFuel) * 100)}%` }}
+              />
+            </div>
+            <span className="text-[11px] text-slate-300">
+              {stats.fuel.toFixed(1)}/{stats.maxFuel}
+            </span>
+          </div>
+        </LabelRow>
+        <LabelRow label="Scrap">
+          <div className="text-sm">⛭ {stats.scrap}</div>
+        </LabelRow>
+      </div>
+      <div className="flex gap-2 mt-1 sm:mt-0">
+        <button
+          onClick={onErasePath}
+          className="px-2 py-1 text-[11px] rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600"
+        >
+          Erase Path
+        </button>
+        <button
+          onClick={onNewMap}
+          className="px-2 py-1 text-[11px] rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600"
+        >
+          New Map
+        </button>
+      </div>
+    </div>
+  );
+};
+
+type EquippedStripProps = {
+  equipped: Record<ItemSlot, Item>;
+};
+
+const EquippedStrip: React.FC<EquippedStripProps> = ({ equipped }) => {
+  return (
+    <div className="w-full max-w-md bg-slate-900/70 rounded-xl p-3 border border-slate-700 text-[10px] flex flex-col gap-1">
+      <div className="text-slate-400 uppercase tracking-wide mb-1">Equipped Ship Parts</div>
+      <div className="grid grid-cols-2 gap-1">
+        {(["CORE", "ENGINE", "HULL", "SCANNER", "UTILITY1", "UTILITY2"] as ItemSlot[]).map(
+          (slot) => (
+            <div key={slot} className="flex flex-col bg-slate-950/60 rounded-md px-2 py-1">
+              <span className="text-[9px] text-slate-500">{slot}</span>
+              <span className="text-[11px] text-slate-100 truncate">
+                {equipped[slot]?.name ?? "Empty"}
+              </span>
+            </div>
+          )
+        )}
+      </div>
+    </div>
+  );
+};
+
+type MapViewProps = {
+  fragment: MapFragment;
+  phase: Phase;
+  pathPoints: PathPoint[];
+  currentPathIndex: number;
+  shipPosition: PathPoint;
+  onPointerDown: (e: React.PointerEvent<SVGSVGElement>) => void;
+  onPointerMove: (e: React.PointerEvent<SVGSVGElement>) => void;
+  onPointerUp: (e: React.PointerEvent<SVGSVGElement>) => void;
+  onLaunch: () => void;
+};
+
+const MapView: React.FC<MapViewProps> = ({
+  fragment,
+  phase,
+  pathPoints,
+  currentPathIndex,
+  shipPosition,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onLaunch,
+}) => {
+  const width = 360;
+  const height = 360;
+
+  const travelledPoints = pathPoints.slice(0, currentPathIndex + 1);
+  const remainingPoints = pathPoints.slice(currentPathIndex);
+
+  const travelledPolyline = travelledPoints.map((p) => `${p.x},${p.y}`).join(" ");
+  const remainingPolyline = remainingPoints.map((p) => `${p.x},${p.y}`).join(" ");
+
+  return (
+    <div className="flex flex-col items-center gap-3 w-full max-w-md bg-slate-900/70 rounded-xl p-3 border border-slate-700">
+      <div className="flex justify-between items-center w-full mb-1 gap-2">
+        <div className="text-[11px] text-slate-400">
+          <span className="font-semibold text-slate-200 mr-1">1.</span>
+          Draw from Base.
+          <span className="font-semibold text-slate-200 mx-1">2.</span>
+          Launch.
+          <span className="font-semibold text-slate-200 mx-1">3.</span>
+          Salvage at nodes; continue or redraw.
+        </div>
+        <button
+          onClick={onLaunch}
+          className={`px-3 py-1 text-[11px] rounded-lg font-medium border transition-colors ${
+            phase === "planning"
+              ? "bg-sky-600/80 border-sky-400 hover:bg-sky-500"
+              : "bg-slate-800 border-slate-600 text-slate-300 cursor-default"
+          }`}
+        >
+          Launch
+        </button>
+      </div>
+
+      <div
+        className="bg-slate-950 rounded-xl border border-slate-700 overflow-hidden touch-none"
+        style={{ width, height }}
+      >
+        <svg
+          viewBox="0 0 100 100"
+          className="w-full h-full"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerLeave={onPointerUp}
+        >
+          {/* Remaining route (future path) */}
+          {remainingPoints.length > 1 && (
+            <polyline
+              points={remainingPolyline}
+              fill="none"
+              stroke="#64748b"
+              strokeWidth={1.4}
+              strokeLinecap="round"
+            />
+          )}
+
+          {/* Travelled path */}
+          {travelledPoints.length > 1 && (
+            <polyline
+              points={travelledPolyline}
+              fill="none"
+              stroke="#38bdf8"
+              strokeWidth={2.2}
+              strokeLinecap="round"
+            />
+          )}
+
+          {/* Nodes */}
+          {fragment.nodes.map((node) => {
+            const isBase = node.type === "BASE";
+            const isExit = node.type === "EXIT";
+
+            return (
+              <g key={node.id}>
+                <circle
+                  cx={node.x}
+                  cy={node.y}
+                  r={4.2}
+                  fill={NODE_COLORS[node.type]}
+                  stroke={isBase ? "#e5e7eb" : isExit ? "#bae6fd" : "#020617"}
+                  strokeWidth={isBase || isExit ? 1.8 : 1.2}
+                />
+                <text
+                  x={node.x}
+                  y={node.y - 5.2}
+                  textAnchor="middle"
+                  fontSize={3}
+                  fill="#e5e7eb"
+                >
+                  {NODE_LABELS[node.type][0]}
+                </text>
+                {node.danger > 0 && node.type !== "BASE" && node.type !== "EXIT" && (
+                  <text
+                    x={node.x}
+                    y={node.y + 6}
+                    textAnchor="middle"
+                    fontSize={2.6}
+                    fill="#f97316"
+                  >
+                    {"!".repeat(node.danger)}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+
+          {/* Ship marker at current position */}
+          {shipPosition && (
+            <g>
+              <circle
+                cx={shipPosition.x}
+                cy={shipPosition.y}
+                r={2.4}
+                fill="#e5e7eb"
+                stroke="#38bdf8"
+                strokeWidth={1.2}
+              />
+            </g>
+          )}
+        </svg>
+      </div>
+
+      {/* Legend + phase indicator */}
+      <div className="flex flex-col gap-2 w-full mt-1">
+        <div className="flex flex-wrap gap-2 text-[10px] text-slate-300">
+          {Object.entries(NODE_COLORS).map(([type, color]) => (
+            <div key={type} className="flex items-center gap-1">
+              <span
+                className="inline-block w-3 h-3 rounded-full border border-slate-800"
+                style={{ backgroundColor: color }}
+              />
+              <span>{NODE_LABELS[type as NodeType]}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-between mt-1">
+          <div className="text-[11px] text-slate-400">
+            Phase: <span className="text-slate-200 capitalize">{phase}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+type SalvagePopupProps = {
+  phase: Phase;
+  salvageUI: SalvageUIState | null;
+  failurePopup: FailurePopup | null;
+  postEventDecisionNeeded: boolean;
+  onSelectOption: (index: number) => void;
+  onSalvage: () => void;
+  onScrap: () => void;
+  onIgnore: () => void;
+};
+
+const SalvagePopup: React.FC<SalvagePopupProps> = ({
+  phase,
+  salvageUI,
+  failurePopup,
+  postEventDecisionNeeded,
+  onSelectOption,
+  onSalvage,
+  onScrap,
+  onIgnore,
+}) => {
+  if (!(phase === "choice" && salvageUI && !failurePopup && !postEventDecisionNeeded)) {
+    return null;
+  }
+
+  return (
+    <div className="w-full max-w-md bg-slate-900/90 rounded-xl p-3 border border-sky-500/70 text-xs flex flex-col gap-2">
+      <div className="flex justify-between items-center mb-1">
+        <span className="font-semibold text-slate-100">
+          {salvageUI.nodeType === "WRECK" && "Wreck: pick a section to strip"}
+          {salvageUI.nodeType === "PIRATE" && "Pirate hull: black-market salvage"}
+          {salvageUI.nodeType === "ANOMALY" && "Anomaly: strange readings"}
+          {salvageUI.nodeType === "BEACON" && "Beacon: refit and refuel"}
+        </span>
+      </div>
+
+      <p className="text-slate-300 mb-1">
+        Tap a ship section to inspect its part, then choose to salvage, strip for raw scrap, or
+        leave it.
+      </p>
+
+      <div className="grid grid-cols-3 gap-2 mb-2">
+        {salvageUI.options.map((opt, idx) => {
+          const isSelected = salvageUI.selectedIndex === idx;
+          const failureRisk = 1 - opt.successChance;
+          const riskClass =
+            failureRisk < 0.25
+              ? "text-emerald-400"
+              : failureRisk < 0.5
+              ? "text-amber-300"
+              : "text-red-400";
+          return (
+            <button
+              key={opt.item.id}
+              onClick={() => onSelectOption(idx)}
+              className={`rounded-lg px-2 py-2 text-left border text-[11px] transition-all ${
+                isSelected
+                  ? "border-sky-400 bg-slate-800 scale-[1.02]"
+                  : "border-slate-700 bg-slate-900/70 hover:bg-slate-800/80"
+              }`}
+            >
+              <div className="text-[9px] text-slate-400 mb-1">{opt.slot}</div>
+              <div className="font-semibold text-slate-50 truncate mb-1">
+                {opt.item.name}
+              </div>
+              <div
+                className={
+                  "text-[10px] text-slate-300 " + (isSelected ? "" : "line-clamp-2")
+                }
+              >
+                {opt.item.description}
+              </div>
+              <div className={`text-[9px] mt-1 ${riskClass}`}>
+                Salvage: {Math.round(opt.successChance * 100)}%
+              </div>
+            </button>
+          );
+        })}
+
+        {salvageUI.options.length === 0 && (
+          <div className="text-slate-400 text-[11px] col-span-3">
+            No distinct parts here, but you can still strip the site for raw scrap.
+          </div>
+        )}
+      </div>
+
+      {salvageUI.selectedIndex != null && salvageUI.options[salvageUI.selectedIndex] && (
+        <div className="mb-2 rounded-md border border-slate-700 bg-slate-950/60 p-2 text-[11px]">
+          <div className="flex justify-between items-center mb-1">
+            <span className="font-semibold text-slate-100">
+              {salvageUI.options[salvageUI.selectedIndex].item.name}
+            </span>
+            <span className="text-[10px] text-slate-400">
+              {salvageUI.options[salvageUI.selectedIndex].slot}
+            </span>
+          </div>
+          <p className="text-slate-300">
+            {salvageUI.options[salvageUI.selectedIndex].item.description}
+          </p>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-1 mb-1">
+        <div className="text-[10px] text-slate-400">
+          Scrap: {Math.round(salvageUI.scrapSuccessChance * 100)}%
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <button
+          onClick={onSalvage}
+          className="rounded-lg border border-emerald-500/70 bg-slate-800/80 hover:bg-slate-700 p-2 text-left disabled:opacity-40 disabled:cursor-not-allowed"
+          disabled={salvageUI.options.length === 0}
+        >
+          <div className="font-semibold mb-1">Salvage Part</div>
+          <div className="text-[11px] text-slate-300">Try to cut and mount the part.</div>
+        </button>
+        <button
+          onClick={onScrap}
+          className="rounded-lg border border-amber-500/70 bg-slate-800/80 hover:bg-slate-700 p-2 text-left"
+        >
+          <div className="font-semibold mb-1">Strip for Scrap</div>
+          <div className="text-[11px] text-slate-300">Take raw materials; risk a mishap.</div>
+        </button>
+        <button
+          onClick={onIgnore}
+          className="rounded-lg border border-slate-600 bg-slate-800/80 hover:bg-slate-700 p-2 text-left"
+        >
+          <div className="font-semibold mb-1">Ignore</div>
+          <div className="text-[11px] text-slate-300">Leave the site and drift on.</div>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+type FailurePopupProps = {
+  popup: FailurePopup | null;
+  onConfirm: () => void;
+};
+
+const FailurePopup: React.FC<FailurePopupProps> = ({ popup, onConfirm }) => {
+  if (!popup) return null;
+  return (
+    <div className="w-full max-w-md bg-slate-900/95 rounded-xl p-3 border border-red-500/70 text-xs flex flex-col gap-2">
+      <div className="flex justify-between items-center mb-1">
+        <span className="font-semibold text-red-300">{popup.title}</span>
+      </div>
+      <p className="text-slate-200">{popup.description}</p>
+      <p className="text-red-300 text-[11px]">Consequence: {popup.consequence}</p>
+      <div className="flex justify-end mt-1">
+        <button
+          onClick={onConfirm}
+          className="px-3 py-1 rounded-lg bg-red-600/80 hover:bg-red-500 text-[11px] font-medium"
+        >
+          Acknowledge
+        </button>
+      </div>
+    </div>
+  );
+};
+
+type RouteDecisionPopupProps = {
+  show: boolean;
+  onDecision: (action: "continue" | "redraw") => void;
+};
+
+const RouteDecisionPopup: React.FC<RouteDecisionPopupProps> = ({ show, onDecision }) => {
+  if (!show) return null;
+  return (
+    <div className="w-full max-w-md bg-slate-900/90 rounded-xl p-3 border border-slate-500 text-xs flex flex-col gap-2">
+      <div className="flex justify-between items-center mb-1">
+        <span className="font-semibold text-slate-100">Route decision</span>
+      </div>
+      <p className="text-slate-300 mb-1">
+        Your ship holds at this waypoint. Stay on the plotted line or stop and draw a new path
+        from here?
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          onClick={() => onDecision("continue")}
+          className="rounded-lg border border-slate-600 bg-slate-800/80 hover:bg-slate-700 p-2 text-left"
+        >
+          <div className="font-semibold mb-1">Continue route</div>
+          <div className="text-[11px] text-slate-300">Keep following the current line.</div>
+        </button>
+        <button
+          onClick={() => onDecision("redraw")}
+          className="rounded-lg border border-sky-500/70 bg-slate-800/80 hover:bg-slate-700 p-2 text-left"
+        >
+          <div className="font-semibold mb-1">Draw new path</div>
+          <div className="text-[11px] text-slate-300">Stop here and switch back to planning.</div>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+type LogPanelProps = {
+  phase: Phase;
+  log: ResolutionLog[];
+};
+
+const LogPanel: React.FC<LogPanelProps> = ({ phase, log }) => {
+  return (
+    <div className="w-full max-w-md bg-slate-900/70 rounded-xl p-3 border border-slate-700 text-xs max-h-48 overflow-auto">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-slate-300 font-medium">Expedition Log</span>
+        <span className="text-[10px] text-slate-500">
+          {phase === "planning" && "Planning path"}
+          {phase === "resolving" && "Ship in transit"}
+          {phase === "choice" && "Awaiting your decision"}
+          {phase === "complete" && "Run complete"}
+        </span>
+      </div>
+      {log.length === 0 ? (
+        <div className="text-slate-500">No events yet. Draw a path and launch.</div>
+      ) : (
+        <ul className="space-y-1">
+          {log.map((entry, idx) => (
+            <li key={idx} className="text-slate-200">
+              {entry.message}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+// ---- Main App ----
+
+const App: React.FC = () => {
+  const [fragment, setFragment] = useState<MapFragment>(() => generateMapFragment());
+  const [stats, setStats] = useState<RunStats>({ ...INITIAL_STATS });
+  const [phase, setPhase] = useState<Phase>("planning");
+  const [log, setLog] = useState<ResolutionLog[]>([]);
+
+  // Free-drawn path
+  const [pathPoints, setPathPoints] = useState<PathPoint[]>([]);
+  const [currentPathIndex, setCurrentPathIndex] = useState(0);
+  const [visitedNodeIds, setVisitedNodeIds] = useState<number[]>([]);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [anomalyVisits, setAnomalyVisits] = useState(0);
+
+  // Items
+  const [equipped, setEquipped] = useState<Record<ItemSlot, Item>>({ ...INITIAL_EQUIPPED });
+
+  // Salvage & failure UI
+  const [salvageUI, setSalvageUI] = useState<SalvageUIState | null>(null);
+  const [failurePopup, setFailurePopup] = useState<FailurePopup | null>(null);
+  const [postEventDecisionNeeded, setPostEventDecisionNeeded] = useState(false);
+  const [signalBenderUsed, setSignalBenderUsed] = useState(false);
+
+  const baseNode = useMemo(
+    () => fragment.nodes.find((n) => n.type === "BASE") ?? fragment.nodes[0],
+    [fragment]
+  );
+
+  const shipPosition: PathPoint = useMemo(() => {
+    if (pathPoints.length === 0) {
+      return { x: baseNode.x, y: baseNode.y };
+    }
+    if (phase === "planning") {
+      return pathPoints[pathPoints.length - 1];
+    }
+    return pathPoints[Math.min(currentPathIndex, pathPoints.length - 1)];
+  }, [phase, pathPoints, currentPathIndex, baseNode]);
+
+  // ---- Logging helper ----
+
+  function pushLog(entry: ResolutionLog) {
+    setLog((prev) => [...prev, entry]);
+  }
+
+  // ---- Item equip logic ----
+
+  function applyEquipEffects(
+    prevStats: RunStats,
+    oldItem: Item | null,
+    newItem: Item | null
+  ): RunStats {
+    let s = { ...prevStats };
+
+    if (oldItem && oldItem.effect) {
+      if (oldItem.effect.maxHullDelta) {
+        s.maxHull -= oldItem.effect.maxHullDelta;
+        s.hull = Math.min(s.hull, s.maxHull);
+      }
+      if (oldItem.effect.maxFuelDelta) {
+        s.maxFuel -= oldItem.effect.maxFuelDelta;
+        s.fuel = Math.min(s.fuel, s.maxFuel);
+      }
+    }
+
+    if (newItem && newItem.effect) {
+      if (newItem.effect.maxHullDelta) {
+        s.maxHull += newItem.effect.maxHullDelta;
+        s.hull = Math.min(s.hull, s.maxHull);
+      }
+      if (newItem.effect.maxFuelDelta) {
+        s.maxFuel += newItem.effect.maxFuelDelta;
+        s.fuel = Math.min(s.fuel, s.maxFuel);
+      }
+    }
+
+    return s;
+  }
+
+  function equipItem(slot: ItemSlot, item: Item) {
+    setEquipped((prevEq) => {
+      const oldItem = prevEq[slot];
+      const nextEq = { ...prevEq, [slot]: item };
+      setStats((prevStats) => applyEquipEffects(prevStats, oldItem, item));
+      pushLog({ nodeId: null, message: `Equipped ${item.name} in ${slot}.` });
+      return nextEq;
+    });
+  }
+
+  // ---- Reset / New map ----
+
+  function resetPathAndFuel() {
+    setPathPoints([]);
+    setCurrentPathIndex(0);
+    setVisitedNodeIds([]);
+    setSalvageUI(null);
+    setFailurePopup(null);
+    setPostEventDecisionNeeded(false);
+    setPhase("planning");
+    setLog([]);
+    setStats((prev) => ({ ...prev, fuel: prev.maxFuel, scrap: 0 }));
+  }
+
+  function handleNewMap() {
+    setFragment(generateMapFragment());
+    setPathPoints([]);
+    setCurrentPathIndex(0);
+    setVisitedNodeIds([]);
+    setSalvageUI(null);
+    setFailurePopup(null);
+    setPostEventDecisionNeeded(false);
+    setPhase("planning");
+    setLog([]);
+    setStats({ ...INITIAL_STATS });
+    setAnomalyVisits(0);
+    setSignalBenderUsed(false);
+  }
+
+  // ---- Drawing path (planning phase) ----
+
+  function svgPointFromEvent(e: React.PointerEvent<SVGSVGElement>): PathPoint {
+    const svg = e.currentTarget;
+    const rect = svg.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    return { x, y };
+  }
+
+  function tryAddPathPoint(point: PathPoint) {
+    if (phase !== "planning") return;
+    if (stats.fuel <= 0) {
+      pushLog({ nodeId: null, message: "Out of fuel – erase the path to try again." });
+      return;
+    }
+
+    let added = false;
+    let cost = 0;
+
+    setPathPoints((prev) => {
+      const next = [...prev];
+
+      if (next.length === 0) {
+        next.push({ x: baseNode.x, y: baseNode.y });
+      }
+
+      const last = next[next.length - 1];
+      const dist = distancePoints(last, point);
+      if (dist < 0.5) {
+        return prev;
+      }
+
+      const engine = equipped.ENGINE;
+      const isFirstSegment = next.length === 1;
+      if (!(engine && engine.id === "engine_long_spine" && isFirstSegment)) {
+        cost = dist * FUEL_PER_UNIT;
+        if (stats.fuel - cost < 0) {
+          return prev;
+        }
+      }
+
+      added = true;
+      next.push(point);
+      return next;
+    });
+
+    if (added && cost > 0) {
+      setStats((prev) => ({ ...prev, fuel: Math.max(0, prev.fuel - cost) }));
+    } else if (!added && stats.fuel <= 0) {
+      pushLog({ nodeId: null, message: "Out of fuel – erase the path to try again." });
+    }
+  }
+
+  function handlePointerDown(e: React.PointerEvent<SVGSVGElement>) {
+    if (phase !== "planning") return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setIsDrawing(true);
+    const p = svgPointFromEvent(e);
+    tryAddPathPoint(p);
+  }
+
+  function handlePointerMove(e: React.PointerEvent<SVGSVGElement>) {
+    if (!isDrawing || phase !== "planning") return;
+    const p = svgPointFromEvent(e);
+    tryAddPathPoint(p);
+  }
+
+  function handlePointerUp(e: React.PointerEvent<SVGSVGElement>) {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  }
+
+  // ---- Launch & Resolution ----
+
+  function handleLaunch() {
+    if (phase !== "planning") return;
+    if (pathPoints.length < 2) {
+      pushLog({ nodeId: null, message: "Draw a path from Base before launching." });
+      return;
+    }
+
+    const startPos = pathPoints[0] ?? { x: baseNode.x, y: baseNode.y };
+    const startNode =
+      fragment.nodes.find((n) => distancePoints(n, startPos) <= HIT_RADIUS) ?? baseNode;
+
+    setPhase("resolving");
+    setCurrentPathIndex(0);
+    setVisitedNodeIds([startNode.id]);
+    setSalvageUI(null);
+    setFailurePopup(null);
+    setPostEventDecisionNeeded(false);
+    setLog([
+      {
+        nodeId: startNode.id,
+        message: startNode.type === "BASE" ? "Launch from Base." : "Launch from waypoint.",
+      },
+    ]);
+  }
+
+  function openSalvageUI(node: MapNode) {
+    const pool = itemsForNodeType(node.type);
+    const sampled = pickSome(pool, 3);
+
+    let anomalyBonus = 0;
+    if (node.type === "ANOMALY") {
+      if (equipped.SCANNER && equipped.SCANNER.id === "scanner_pattern_solver") {
+        anomalyBonus += 0.05 * anomalyVisits;
+      }
+      if (equipped.UTILITY2 && equipped.UTILITY2.id === "util_graviton_seed") {
+        anomalyBonus += 0.05 * anomalyVisits;
+      }
+    }
+
+    const options: SalvageOption[] = sampled.map((item) => {
+      const slot: ItemSlot = item.slot;
+      const baseChance =
+        item.rarity === "COMMON" ? 0.8 : item.rarity === "UNCOMMON" ? 0.6 : 0.4;
+      const bonus = node.type === "ANOMALY" ? anomalyBonus : 0;
+      const successChance = Math.min(0.95, baseChance + bonus);
+      return { slot, item, successChance };
+    });
+
+    let scrapChance = scrapSuccessChanceFor(node.type);
+    if (node.type === "ANOMALY") {
+      scrapChance = Math.min(0.95, scrapChance + anomalyBonus);
+    }
+
+    if (options.length === 0) {
+      setSalvageUI({
+        nodeId: node.id,
+        nodeType: node.type,
+        options: [],
+        selectedIndex: null,
+        scrapSuccessChance: scrapChance,
+      });
+      return;
+    }
+
+    setSalvageUI({
+      nodeId: node.id,
+      nodeType: node.type,
+      options,
+      selectedIndex: 0,
+      scrapSuccessChance: scrapChance,
+    });
+  }
+
+  function stepAlongPath() {
+    if (phase !== "resolving") return;
+    if (pathPoints.length < 2) {
+      setPhase("complete");
+      pushLog({ nodeId: null, message: "No path to follow." });
+      setStats((prev) => ({ ...prev, scrap: 0 }));
+      return;
+    }
+
+    const nextIndex = currentPathIndex + 1;
+
+    if (nextIndex >= pathPoints.length) {
+      const finalPos = pathPoints[pathPoints.length - 1];
+      const distToBase = distancePoints(finalPos, baseNode);
+      if (distToBase <= HIT_RADIUS) {
+        pushLog({ nodeId: baseNode.id, message: "Path ends at Base. Salvage secured." });
+      } else {
+        pushLog({ nodeId: null, message: "Path ends away from Base. Salvage lost." });
+        setStats((prev) => ({ ...prev, scrap: 0 }));
+      }
+      setCurrentPathIndex(pathPoints.length - 1);
+      setPhase("complete");
+      return;
+    }
+
+    const prevPos = pathPoints[currentPathIndex];
+    const pos = pathPoints[nextIndex];
+
+    const nodeHit = fragment.nodes.find((n) => {
+      if (visitedNodeIds.includes(n.id)) return false;
+      const d = distancePointToSegment(n, prevPos, pos);
+      return d <= HIT_RADIUS;
+    });
+
+    setCurrentPathIndex(nextIndex);
+
+    if (!nodeHit) return;
+
+    setVisitedNodeIds((prev) => [...prev, nodeHit.id]);
+
+    switch (nodeHit.type) {
+      case "WRECK":
+      case "ANOMALY":
+      case "BEACON": {
+        if (nodeHit.type === "ANOMALY") {
+          setAnomalyVisits((v) => v + 1);
+        }
+        openSalvageUI(nodeHit);
+        setPhase("choice");
+        break;
+      }
+      case "PIRATE": {
+        if (
+          equipped.UTILITY2 &&
+          equipped.UTILITY2.id === "util_signal_bender" &&
+          !signalBenderUsed
+        ) {
+          setSignalBenderUsed(true);
+          pushLog({
+            nodeId: nodeHit.id,
+            message: "Signal Bender spoofs this Pirate node to neutral.",
+          });
+          break;
+        }
+        openSalvageUI(nodeHit);
+        setPhase("choice");
+        break;
+      }
+      case "EXIT": {
+        pushLog({ nodeId: nodeHit.id, message: "Exit gate reached. You route back to Base." });
+        setPhase("complete");
+        break;
+      }
+      case "BASE": {
+        pushLog({ nodeId: nodeHit.id, message: "Docked at Base. Salvage secured." });
+        setPhase("complete");
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  // ---- Salvage & Scrap handling ----
+
+  function handleSelectSalvageOption(index: number) {
+    if (!salvageUI) return;
+    setSalvageUI({ ...salvageUI, selectedIndex: index });
+  }
+
+  function resolvePostEventDecisionNeeded() {
+    setPostEventDecisionNeeded(true);
+  }
+
+  function handleFailureConfirm() {
+    if (!failurePopup) return;
+    const popup = failurePopup;
+    setFailurePopup(null);
+    setStats((prev) => {
+      const next = popup.apply(prev);
+      if (
+        popup.nodeType === "WRECK" &&
+        equipped.UTILITY1 &&
+        equipped.UTILITY1.id === "util_risk_recyclers"
+      ) {
+        next.scrap += 1;
+      }
+      return next;
+    });
+    pushLog({ nodeId: null, message: `${popup.title}: ${popup.consequence}` });
+    if (
+      popup.nodeType === "WRECK" &&
+      equipped.UTILITY1 &&
+      equipped.UTILITY1.id === "util_risk_recyclers"
+    ) {
+      pushLog({ nodeId: null, message: "Risk Recyclers: +1 Scrap from Wreck damage." });
+    }
+    resolvePostEventDecisionNeeded();
+  }
+
+  function handleSalvageConfirm() {
+    if (!salvageUI) return;
+    const { selectedIndex, options, nodeType } = salvageUI;
+    if (selectedIndex == null || !options[selectedIndex]) return;
+
+    const option = options[selectedIndex];
+    const roll = Math.random();
+    if (roll <= option.successChance) {
+      equipItem(option.slot, option.item);
+      setStats((prev) => ({ ...prev, scrap: prev.scrap + 1 }));
+      pushLog({
+        nodeId: salvageUI.nodeId,
+        message: `You salvage ${option.item.name} (${Math.round(option.successChance * 100)}%).`,
+      });
+      setSalvageUI(null);
+      resolvePostEventDecisionNeeded();
+    } else {
+      if (
+        nodeType === "PIRATE" &&
+        equipped.UTILITY1 &&
+        equipped.UTILITY1.id === "util_pirate_codebreaker" &&
+        stats.scrap > 0
+      ) {
+        setStats((prev) => ({ ...prev, scrap: Math.max(0, prev.scrap - 1) }));
+        pushLog({
+          nodeId: salvageUI.nodeId,
+          message: "You pay off the pirates with Scrap instead of taking damage.",
+        });
+        setSalvageUI(null);
+        resolvePostEventDecisionNeeded();
+        return;
+      }
+      const failure = randomFailureFor(nodeType);
+      setFailurePopup(failure);
+      setSalvageUI(null);
+    }
+  }
+
+  function handleScrapConfirm() {
+    if (!salvageUI) return;
+    const { nodeType, scrapSuccessChance } = salvageUI;
+    const roll = Math.random();
+    if (roll <= scrapSuccessChance) {
+      const reward = scrapRewardFor(nodeType);
+      setStats((prev) => ({ ...prev, scrap: prev.scrap + reward }));
+      pushLog({ nodeId: salvageUI.nodeId, message: `You strip the site for scrap (+${reward}).` });
+      setSalvageUI(null);
+      resolvePostEventDecisionNeeded();
+    } else {
+      if (
+        nodeType === "PIRATE" &&
+        equipped.UTILITY1 &&
+        equipped.UTILITY1.id === "util_pirate_codebreaker" &&
+        stats.scrap > 0
+      ) {
+        setStats((prev) => ({ ...prev, scrap: Math.max(0, prev.scrap - 1) }));
+        pushLog({
+          nodeId: salvageUI.nodeId,
+          message: "You pay off the pirates with Scrap instead of taking damage.",
+        });
+        setSalvageUI(null);
+        resolvePostEventDecisionNeeded();
+        return;
+      }
+      const failure = randomFailureFor(nodeType);
+      setFailurePopup(failure);
+      setSalvageUI(null);
+    }
+  }
+
+  function handleSalvageIgnore() {
+    if (!salvageUI) return;
+    pushLog({ nodeId: salvageUI.nodeId, message: "You leave the site untouched." });
+    setSalvageUI(null);
+    resolvePostEventDecisionNeeded();
+  }
+
+  function handleRouteDecision(action: "continue" | "redraw") {
+    if (action === "continue") {
+      setPostEventDecisionNeeded(false);
+      setPhase("resolving");
+      return;
+    }
+    // redraw
+    setPostEventDecisionNeeded(false);
+    setPhase("planning");
+    setPathPoints((prev) => prev.slice(0, currentPathIndex + 1));
+    pushLog({ nodeId: null, message: "You hold position and begin plotting a new path." });
+  }
+
+  // ---- Auto-advance ship along path when resolving ----
+
+  useEffect(() => {
+    if (phase !== "resolving") return;
+    if (salvageUI || failurePopup || postEventDecisionNeeded) return;
+    if (pathPoints.length < 2) return;
+
+    const id = window.setInterval(() => {
+      stepAlongPath();
+    }, 260);
+
+    return () => window.clearInterval(id);
+  }, [
+    phase,
+    salvageUI,
+    failurePopup,
+    postEventDecisionNeeded,
+    pathPoints,
+    currentPathIndex,
+    visitedNodeIds,
+    equipped,
+    signalBenderUsed,
+    fragment,
+    baseNode,
+  ]);
+
+  // ---- Render ----
+
+  return (
+    <div className="min-h-screen w-full bg-slate-950 text-slate-50 flex flex-col items-center py-4 px-2">
+      <div className="w-full max-w-3xl flex flex-col items-center gap-3">
+        <h1 className="text-lg font-semibold tracking-tight text-slate-50">
+          Crash Cartographers: Freepath Salvage
+        </h1>
+        <p className="text-[11px] text-slate-400 max-w-xl text-center">
+          Draw risky routes through drifting wrecks, anomalies, pirates, and beacons. Spend fuel to
+          chart your path, then launch your ship and decide what to salvage along the way.
+        </p>
+
+        <StatsBar stats={stats} onErasePath={resetPathAndFuel} onNewMap={handleNewMap} />
+        <EquippedStrip equipped={equipped} />
+
+        <MapView
+          fragment={fragment}
+          phase={phase}
+          pathPoints={pathPoints}
+          currentPathIndex={currentPathIndex}
+          shipPosition={shipPosition}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onLaunch={handleLaunch}
+        />
+
+        <SalvagePopup
+          phase={phase}
+          salvageUI={salvageUI}
+          failurePopup={failurePopup}
+          postEventDecisionNeeded={postEventDecisionNeeded}
+          onSelectOption={handleSelectSalvageOption}
+          onSalvage={handleSalvageConfirm}
+          onScrap={handleScrapConfirm}
+          onIgnore={handleSalvageIgnore}
+        />
+
+        <FailurePopup popup={failurePopup} onConfirm={handleFailureConfirm} />
+        <RouteDecisionPopup
+          show={postEventDecisionNeeded && !failurePopup && !salvageUI}
+          onDecision={handleRouteDecision}
+        />
+
+        <LogPanel phase={phase} log={log} />
+      </div>
+    </div>
+  );
+};
+
+export default App;
