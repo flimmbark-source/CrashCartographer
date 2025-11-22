@@ -44,6 +44,6 @@ export const INITIAL_EQUIPPED: ShipLoadout = {
   ENGINE: ALL_ITEMS.find((i) => i.id === "engine_basic")!,
   HULL: ALL_ITEMS.find((i) => i.id === "hull_standard")!,
   SCANNER: ALL_ITEMS.find((i) => i.id === "scanner_basic")!,
-  UTILITY1: ALL_ITEMS.find((i) => i.id === "util_risk_recyclers") || ALL_ITEMS[0],
-  UTILITY2: ALL_ITEMS.find((i) => i.id === "util_signal_bender") || ALL_ITEMS[0],
+  UTILITY1: ALL_ITEMS.find((i) => i.id === "util_basic_mount")!,
+  UTILITY2: ALL_ITEMS.find((i) => i.id === "util_basic_circuit")!,
 };
